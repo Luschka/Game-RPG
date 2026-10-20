@@ -12,9 +12,11 @@ Sur mobile, « Ajouter à l'écran d'accueil » le lance en plein écran.
 - **Combat** : touche un ennemi pour le cibler, touche un héros pour agir, **▾** pour choisir compétence/Limite/défense/objet. Enchaîne vite les héros pour faire grimper le multiplicateur de chaîne (jusqu'à ×2,5). Mode **AUTO** et bouton **Tout lancer**.
 - **Buffs/débuffs** (ATT/DÉF/MAG/PSY), poison, régénération, provocation, étourdissement.
 - **Équipement** : arme, armure, accessoire, avec effets passifs (élément d'arme, critique, régén auto, PM/tour, Limite accélérée…).
+- **Pixel art** : 6 héros et 18 monstres (dont 3 boss en 64×64) dessinés en pixel art façon RPG 16/32-bit, générés dans `sprites.js` (formes ombrées en 4 tons + contour coloré). Champ de bataille façon FFBE : monstres à gauche, héros à droite.
 - Sauvegarde automatique sur la carte (localStorage) et records.
 
 ## Fichiers
 - `index.html` — page
 - `style.css` — interface mobile
+- `sprites.js` — pixel art des héros et monstres
 - `game.js` — données et logique du jeu

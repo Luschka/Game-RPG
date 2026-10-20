@@ -259,6 +259,7 @@ function genEquip(boost = 0, minRar = 1, forced = null) {
 let run = null;
 let B = null; // combat en cours
 const elMap = new Map();
+const spMap = new Map(); // sprites des héros sur le champ de bataille
 let muted = store.get('eb.muted', false);
 const records = store.get('eb.records', { bestFloor: 0, wins: 0, bestChain: 0, runs: 0 });
 
@@ -347,7 +348,7 @@ function sfx(type) {
 function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch { /* rien */ } }
 
 function float(u, text, cls = '') {
-  const el = elMap.get(u.uid); if (!el) return;
+  const el = spMap.get(u.uid) || elMap.get(u.uid); if (!el) return;
   const r = el.getBoundingClientRect();
   const f = document.createElement('div');
   f.className = 'float ' + cls;
@@ -428,7 +429,7 @@ function startBattle(kind) {
 }
 
 function buildBattle() {
-  elMap.clear();
+  elMap.clear(); spMap.clear();
   const F = FLOORS[run.floor - 1];
   app.className = 'battle-wrap';
   app.innerHTML = `
@@ -439,7 +440,10 @@ function buildBattle() {
       <button class="chip ${B.auto ? 'on' : ''}" id="autoBtn" data-act="toggleAuto">AUTO</button>
     </div>
     <div id="chain" class="chain"></div>
-    <div class="enemies n${B.enemies.length}" id="enemies"></div>
+    <div class="field">
+      <div class="enemies n${B.enemies.length}" id="enemies"></div>
+      <div class="pfield" id="pfield"></div>
+    </div>
     <div class="hint">Touche un ennemi pour le cibler · un héros pour agir · <b>▾</b> pour ses compétences</div>
     <div class="heroes" id="heroes"></div>
     <div class="bbar">
@@ -452,7 +456,7 @@ function buildBattle() {
     const d = document.createElement('div');
     d.className = 'enemy' + (e.boss ? ' boss' : '') + (e.elite ? ' elite' : '');
     d.dataset.act = 'target'; d.dataset.uid = e.uid;
-    d.innerHTML = `<div class="reticle"></div><div class="esprite">${e.i}</div>
+    d.innerHTML = `<div class="reticle"></div><div class="esprite">${spr(e.key, B.enemies.length === 1 ? 3 : 2.5)}</div>
       <div class="ename">${e.n}</div><div class="bar ehp"><i></i></div>
       <div class="eweak">${e.weak.length ? '<span title="Faiblesses">' + e.weak.map(w => EL[w].i).join('') + '</span>' : ''}${e.res.length ? '<s title="Résistances">' + e.res.map(w => EL[w].i).join('') + '</s>' : ''}</div>
       <div class="stx"></div>`;
@@ -465,13 +469,17 @@ function buildBattle() {
     d.className = 'hcard'; d.dataset.act = 'hero'; d.dataset.i = i;
     d.style.setProperty('--cc', c.col);
     d.innerHTML = `
-      <div class="hc-top"><span class="hc-ic">${c.i}</span><span class="hc-name">${h.n}</span><span class="hc-lv">Nv${h.lvl}</span></div>
+      <div class="hc-top"><span class="hc-ic">${spr(h.cls)}</span><span class="hc-name">${h.n}</span><span class="hc-lv">Nv${h.lvl}</span></div>
       <div class="bar hp"><i></i><b></b></div>
       <div class="bar mp"><i></i><b></b></div>
       <div class="bar lb"><i></i></div>
       <div class="stx"></div>
       <button class="hc-act" data-act="heroMenu" data-i="${i}"></button>`;
     hw.appendChild(d); elMap.set(h.uid, d);
+    const sp = document.createElement('div');
+    sp.className = 'hsp p' + i; sp.dataset.act = 'hero'; sp.dataset.i = i;
+    sp.innerHTML = `<div class="hsp-in">${spr(h.cls, 2.5)}</div>`;
+    $('#pfield').appendChild(sp); spMap.set(h.uid, sp);
   });
   updateBattle();
 }
@@ -517,6 +525,13 @@ function updateBattle() {
     d.classList.toggle('low', h.hp > 0 && h.hp < mh * 0.3);
     d.querySelector('.stx').innerHTML = statusHTML(h);
     d.querySelector('.hc-act').innerHTML = `<span>${qLabel(h)}</span><b>▾</b>`;
+    const sp = spMap.get(h.uid);
+    if (sp) {
+      sp.classList.toggle('ko', h.hp <= 0);
+      sp.classList.toggle('lbfull', h.lb >= 100 && h.hp > 0);
+      sp.classList.toggle('low', h.hp > 0 && h.hp < mh * 0.3);
+      sp.classList.toggle('guard', !!h.status.defend);
+    }
   }
 }
 
@@ -587,7 +602,7 @@ async function endTurnBtn() {
 }
 
 async function performAction(h, q) {
-  pulse(elMap.get(h.uid), 'acting');
+  pulse(elMap.get(h.uid), 'acting'); pulse(spMap.get(h.uid), 'acting');
   if (q.k === 'defend') { h.status.defend = 1; float(h, 'Défense', 'info'); sfx('buff'); await sleep(200); return; }
   if (q.k === 'item') { await useItemBattle(h, q.id); return; }
   if (q.k === 'lb') { h.lb = 0; updateBattle(); await lbFlash(h); await useSkill(h, SK[CLASSES[h.cls].lb], true); return; }
@@ -684,7 +699,7 @@ function hit(u, t, fx, p) {
   }
   float(t, crit ? `${dmg}!` : dmg, crit ? 'crit' : tag || (t.isHero ? 'hurt' : ''));
   if (tag === 'weak') float(t, 'FAIBLE', 'tagw');
-  pulse(elMap.get(t.uid), 'hit');
+  pulse(elMap.get(t.uid), 'hit'); pulse(spMap.get(t.uid), 'hit');
   sfx(crit ? 'crit' : tag === 'weak' ? 'weak' : phys ? 'hit' : 'mag');
   if (crit && t.boss) buzz(15);
   if (fx.drain && u.hp > 0) healUnit(u, Math.round(dmg * fx.drain));
@@ -859,7 +874,7 @@ function openHeroMenu(i) {
   const row = (k, id, ic, name, sub, cost, ok, cls = '') =>
     `<button class="opt ${cls}" data-act="chooseQ" data-i="${i}" data-k="${k}" data-id="${id}" ${ok ? '' : 'disabled'}>
       <span class="o-ic">${ic}</span><span class="o-b"><b>${name}</b><small>${sub}</small></span><span class="o-c">${cost}</span></button>`;
-  let html = `<div class="sh-head"><span>${c.i} ${h.n}</span><small>PM ${h.mp}/${maxMP(h)} · Limite ${Math.floor(h.lb)}%</small></div><div class="sh-list">`;
+  let html = `<div class="sh-head"><span>${spr(h.cls, 1, 'ic')} ${h.n}</span><small>PM ${h.mp}/${maxMP(h)} · Limite ${Math.floor(h.lb)}%</small></div><div class="sh-list">`;
   const lb = SK[c.lb];
   html += row('lb', '', '🌈', lb.n, skillDesc(lb), 'LIMITE', h.lb >= 100, 'lbopt');
   html += row('attack', '', '⚔️', 'Attaque', `Physique ×1${weaponEl(h) ? ' ' + EL[weaponEl(h)].i : ''} · 1 ennemi`, '', true);
@@ -914,7 +929,7 @@ function victory() {
     gainXP(h, xp);
     if (h.lvl > before) {
       const newSk = CLASSES[h.cls].skills.filter(([, l]) => l > before && l <= h.lvl).map(([id]) => SK[id].n);
-      ups.push(`${CLASSES[h.cls].i} ${h.n} → Nv ${h.lvl}${newSk.length ? ` · apprend <b>${newSk.join(', ')}</b>` : ''}`);
+      ups.push(`${spr(h.cls, 1, 'ic')} ${h.n} → Nv ${h.lvl}${newSk.length ? ` · apprend <b>${newSk.join(', ')}</b>` : ''}`);
     }
   }
   if (run.st.chain > records.bestChain) { records.bestChain = run.st.chain; saveRecords(); }
@@ -980,7 +995,7 @@ function floorClear() {
         <div class="crystal big"></div>
         <h1 class="vic">LÉGENDE !</h1>
         <p class="sub">Le Dragon du Néant est vaincu. Les Cristaux d'Éther brillent à nouveau !</p>
-        <div class="party-row">${run.party.map(h => `<span>${CLASSES[h.cls].i}<small>${h.n} Nv${h.lvl}</small></span>`).join('')}</div>
+        <div class="party-row">${run.party.map(h => `<span>${spr(h.cls, 2)}<small>${h.n} Nv${h.lvl}</small></span>`).join('')}</div>
         ${statsHTML()}
         <button class="btn big" data-act="newRun">Nouvelle aventure</button>
         <button class="btn ghost" data-act="title">Écran titre</button>
@@ -1038,7 +1053,7 @@ function showMap() {
       <div class="progress">${dots}</div>
       <div class="pmini">${run.party.map(h => {
         const c = CLASSES[h.cls];
-        return `<div class="pm ${h.hp <= 0 ? 'ko' : ''}" style="--cc:${c.col}"><span>${c.i}</span><div><b>${h.n}</b><small>Nv${h.lvl}</small><div class="bar hp sm"><i style="width:${pct(h.hp, maxHP(h))}%"></i></div><div class="bar mp sm"><i style="width:${pct(h.mp, maxMP(h))}%"></i></div></div></div>`;
+        return `<div class="pm ${h.hp <= 0 ? 'ko' : ''}" style="--cc:${c.col}"><span>${spr(h.cls, 1)}</span><div><b>${h.n}</b><small>Nv${h.lvl}</small><div class="bar hp sm"><i style="width:${pct(h.hp, maxHP(h))}%"></i></div><div class="bar mp sm"><i style="width:${pct(h.mp, maxMP(h))}%"></i></div></div></div>`;
       }).join('')}</div>
       <h3 class="choose">${run.row === ROWS - 1 ? 'Le gardien vous attend…' : 'Choisis ta voie'}</h3>
       <div class="paths">${run.options.map((o, i) => `
@@ -1207,9 +1222,9 @@ function showParty() {
   render(`
     <div class="screen party">
       <header class="mhead"><div><small>Équipe</small><h2>Gestion</h2></div><div class="gil">💰 ${run.gil}</div></header>
-      <div class="tabs">${run.party.map((x, i) => `<button class="${i === partyIdx ? 'on' : ''}" data-act="ptab" data-i="${i}" style="--cc:${CLASSES[x.cls].col}">${CLASSES[x.cls].i}<small>${x.n}</small></button>`).join('')}</div>
+      <div class="tabs">${run.party.map((x, i) => `<button class="${i === partyIdx ? 'on' : ''}" data-act="ptab" data-i="${i}" style="--cc:${CLASSES[x.cls].col}">${spr(x.cls, 1)}<small>${x.n}</small></button>`).join('')}</div>
       <div class="hero-sheet" style="--cc:${c.col}">
-        <div class="hs-top"><div class="hs-ic">${c.i}</div><div><h2>${h.n}</h2><small>${c.n} · ${c.role}</small>
+        <div class="hs-top"><div class="hs-ic">${spr(h.cls, 2)}</div><div><h2>${h.n}</h2><small>${c.n} · ${c.role}</small>
           <div class="lvl">Niveau ${h.lvl} <div class="bar xp"><i style="width:${pct(h.xp, xpNeed(h.lvl))}%"></i></div><small>${h.xp}/${xpNeed(h.lvl)} EXP</small></div></div></div>
         <div class="hs-stats">${stats.map(s => `<div><small>${STAT[s]}</small><b>${s === 'hp' ? `${h.hp}/${heroStat(h, s)}` : s === 'mp' ? `${h.mp}/${heroStat(h, s)}` : heroStat(h, s)}</b></div>`).join('')}</div>
         ${pas.length ? `<div class="pas">${pas.map(p => `<span>${p}</span>`).join('')}</div>` : ''}
@@ -1262,7 +1277,7 @@ function showBag() {
       <h3>Objets</h3>
       <div class="shoplist">${Object.keys(ITEMS).map(id => `<div class="srow">${itemCard(id, run.items[id])}<button class="btn sm" data-act="useItem" data-id="${id}" ${run.items[id] > 0 ? '' : 'disabled'}>Utiliser</button></div>`).join('')}</div>
       <h3>Équipe</h3>
-      <div class="pmini">${run.party.map(h => `<div class="pm ${h.hp <= 0 ? 'ko' : ''}" style="--cc:${CLASSES[h.cls].col}"><span>${CLASSES[h.cls].i}</span><div><b>${h.n}</b><small>${h.hp}/${maxHP(h)} PV · ${h.mp}/${maxMP(h)} PM</small><div class="bar hp sm"><i style="width:${pct(h.hp, maxHP(h))}%"></i></div></div></div>`).join('')}</div>
+      <div class="pmini">${run.party.map(h => `<div class="pm ${h.hp <= 0 ? 'ko' : ''}" style="--cc:${CLASSES[h.cls].col}"><span>${spr(h.cls, 1)}</span><div><b>${h.n}</b><small>${h.hp}/${maxHP(h)} PV · ${h.mp}/${maxMP(h)} PM</small><div class="bar hp sm"><i style="width:${pct(h.hp, maxHP(h))}%"></i></div></div></div>`).join('')}</div>
       <button class="btn wide back" data-act="map">‹ Retour</button>
     </div>`, 'scroll');
 }
@@ -1270,7 +1285,7 @@ function chooseHeroSheet(title, act, extra = '', filter = () => true) {
   let html = `<div class="sh-head"><span>${title}</span></div><div class="sh-list">`;
   run.party.forEach((h, i) => {
     const ok = filter(h);
-    html += `<button class="opt" data-act="${act}" data-i="${i}" ${extra} ${ok ? '' : 'disabled'}><span class="o-ic">${CLASSES[h.cls].i}</span><span class="o-b"><b>${h.n} · Nv${h.lvl}</b><small>${h.hp}/${maxHP(h)} PV · ${h.mp}/${maxMP(h)} PM</small></span></button>`;
+    html += `<button class="opt" data-act="${act}" data-i="${i}" ${extra} ${ok ? '' : 'disabled'}><span class="o-ic">${spr(h.cls, 1)}</span><span class="o-b"><b>${h.n} · Nv${h.lvl}</b><small>${h.hp}/${maxHP(h)} PV · ${h.mp}/${maxMP(h)} PM</small></span></button>`;
   });
   html += `</div><button class="btn ghost wide" data-act="closeSheet">Annuler</button>`;
   openSheet(html);
@@ -1310,6 +1325,7 @@ function showTitle() {
       <div class="crystal big"></div>
       <h1 class="logo">ÉTHER<span>BRAVE</span></h1>
       <p class="tag">RPG Roguelike des Cristaux</p>
+      <div class="lineup">${Object.keys(CLASSES).map(k => spr(k, 2)).join('')}</div>
       <div class="menu">
         ${saved ? `<button class="btn big" data-act="continue">▶ Continuer <small>Étage ${saved.floor} · ${saved.row + 1}/${ROWS}</small></button>` : ''}
         <button class="btn ${saved ? 'ghost' : 'big'}" data-act="newRun">✦ Nouvelle aventure</button>
@@ -1326,7 +1342,7 @@ function showSelect() {
       <p class="sub">Choisis <b>4 héros</b> parmi 6 classes.</p>
       <div class="classes">${Object.entries(CLASSES).map(([k, c]) => `
         <button class="cls ${selected.includes(k) ? 'on' : ''}" data-act="pickCls" data-k="${k}" style="--cc:${c.col}">
-          <span class="c-ic">${c.i}</span><b>${c.n}</b><small>${c.role}</small>
+          <span class="c-ic">${spr(k, 2)}</span><b>${c.n}</b><small>${c.role}</small>
           <em>${c.skills.slice(0, 3).map(([id]) => SK[id].n).join(' · ')}</em>
           <span class="c-lb">🌈 ${SK[c.lb].n}</span>
         </button>`).join('')}</div>
@@ -1382,7 +1398,7 @@ const ACT = {
     render(`
       <div class="screen center floorT" style="--bg:${F.bg}">
         <p class="sub">Les Cristaux d'Éther s'assombrissent. Votre équipe se met en route…</p>
-        <div class="party-row">${run.party.map(h => `<span>${CLASSES[h.cls].i}<small>${h.n}</small></span>`).join('')}</div>
+        <div class="party-row">${run.party.map(h => `<span>${spr(h.cls, 2)}<small>${h.n}</small></span>`).join('')}</div>
         <div class="crystal"></div>
         <h2>Étage 1</h2><h1 class="fname">${F.n}</h1>
         <button class="btn big" data-act="map">En avant !</button>
